@@ -3,86 +3,94 @@ import pandas as pd
 import pickle
 import math
 
+
+NUM_DIGITS = 10
+
 def main():
+    # Get the classes to classify from the user
+    selected_classes = get_classes()
+    n = len(selected_classes)
 
-    # Import flattened test and train data (x) and associated labels (t)
-    print("Importing data...")
-    x_train, t_train, x_test, t_test = load()
-
-
-    # Calculate average brightnesses and std. deviations for each sample
-    print("Extracting features...")
-    train_features = get_mean_and_std(x_train)
-    test_features = get_mean_and_std(x_test)
-
-
-    # Load features and labels into dataframes
-    df_train = get_dataframes(train_features, t_train)
-
-
-    # Sort dataframes by label in ascending order
-    print("Sorting data...")
-    df_train = df_train.sort_values(by = ['label'])
-
+    # Load the train/test data for the selected digits
+    df_train, df_test = load(selected_classes)
 
     # Obtain the mean and variance of each class for the classifier
     print("Constructing classifier...")
     df_classifier = df_train.groupby('label').agg(["mean", "var"])
 
-
     # Obtain the prior probabities for each class (0-9)
-    priors = get_priors(df_train)
+    priors = get_priors(df_train, selected_classes)
 
 
     # Make predictions on test data
     print("Making predicitons...")
-    predictions = np.zeros(len(x_test))
-#    for i in range(0, len(x_test)):
-#        predictions[i] = predict(test_features[i], priors, df_classifier)
-#    print(df_classifier)
+    predictions = pd.DataFrame(np.zeros(df_test.shape[0]))
+    for i in range(0, df_test.shape[0]):
+        predictions.iloc[i] = predict(df_test.iloc[i], priors, df_classifier, selected_classes)
 
     # Calculate accuracy
     print("Calculating accuracy...")
-    accuracies = calc_accuracies(predictions, t_test)
-    print(accuracies)
+    accuracies = calc_accuracies(predictions, df_test['label'], n)
+    print_accuracies(accuracies, selected_classes)
 
+
+def get_classes():
+    possible_digits = []
+    for i in range(0, NUM_DIGITS):
+        possible_digits.append(str(i))
+
+    # Ask user to select which digits they want to run classification on
+    selected_digits = []
+    load_all = None
+    while load_all not in ("Y", "y", "N", "n"):
+        load_all = input("Do you want to classify all ten digits? ")
+        if load_all == "Y" or load_all == "y":
+            for i in range(0, NUM_DIGITS):
+                selected_digits.append(str(i))
+
+        elif load_all == "N" or load_all == "n":
+            selection = None
+            while selection not in (possible_digits) and len(selected_digits) < 10:
+                selection = input("Enter a digit to use (0-9) or X if finished: ")
+                if selection in possible_digits:
+                    selected_digits.append(selection)
+                    possible_digits.remove(selection)
+
+                elif selection == "X" or selection == "x":
+                    if len(selected_digits) < 2:
+                        print("You must enter two unique digits to perform classification.")
+                    else:
+                        break
+
+                elif selection in selected_digits:
+                    print("Invalid input. Please enter a unique digit or X if finished.")
+
+                else:
+                    print("Invalid input. Please enter a single digit between 0 and 9 inclusive.")
+
+        else:
+            print("Invalid input. Please enter Y of N.")
+
+    return selected_digits
 
 
 # Loads MNIST data saved in pickle format into numpy arrays
-def load():
-    with open("mnist.pkl",'rb') as f:
-        mnist = pickle.load(f)
-    return mnist["training_images"], mnist["training_labels"], mnist["test_images"], mnist["test_labels"]
+def load(selected_classes):
+    train_collection = {}
+    test_collection = {}
 
+    for digit in selected_classes:
+        train_collection[int(digit)] = pd.read_pickle("./data/train_" + digit + ".pkl")
+        test_collection[int(digit)] = pd.read_pickle("./data/test_" + digit + ".pkl")
 
-# Returns numpy array containing
-#   Feature 1: The mean (average brightness)
-#   Feature 2: The std. deviation
-# for each sample
-def get_mean_and_std(data):
-    features = np.zeros([len(data), 2])
-    i = 0
-    for sample in data:
-        features[i,0] = np.mean(sample)
-        features[i,1] = np.std(sample)
-        i += 1
+    df_train = pd.concat(train_collection, ignore_index = True)
+    df_test = pd.concat(test_collection, ignore_index = True)
 
-    return features
-
-
-# Converts and concatenates data and labels into a dataframe
-def get_dataframes(data, labels):
-    col_vals_data = ['feature1', 'feature2']
-    col_vals_labels = ['label']
-
-    df1 = pd.DataFrame(data, columns = col_vals_data)
-    df2 = pd.DataFrame(labels, columns = col_vals_labels)
-
-    return pd.concat([df1, df2], axis = 1)
+    return df_train, df_test
 
 
 # Return the prior probabilities for each class based on frequency in the training set
-def get_priors(df):
+def get_priors(df, selected_classes):
     # Get the total number of samples (rows)
     total = df.shape[0]
 
@@ -90,23 +98,33 @@ def get_priors(df):
     counts = df['label'].value_counts().sort_index()
 
     # Calculate the prior probability for each class
-    priors = np.zeros(10)
-    for i in range(0, counts.shape[0]):
-        priors[i] = counts.iloc[[i]] / total
+    priors = np.zeros(NUM_DIGITS)
+
+    i = 0
+    for index in counts.index:
+        priors[index] = counts.iloc[[i]] / total
+        i += 1
+
+#    for i in range(0, counts.shape[0]):
+#        priors[i] = counts.iloc[[i]] / total
 
     return priors
 
 
 # Predicts the label of a sample using Naive Bayes
-def predict(sample, priors, df_classifier):
-    posterior_probabilities = np.zeros(10)
-    evidences = np.zeros(10)
+def predict(sample, priors, df_classifier, selected_classes):
+    posterior_probabilities = np.zeros(NUM_DIGITS)
+    evidences = np.zeros(NUM_DIGITS)
 
-    for i in range(0, len(posterior_probabilities)):
-        p_feature1_given_label = probability_distribution(sample[0], df_classifier.iloc[i][0], df_classifier.iloc[i][1])
-        p_feature2_given_label = probability_distribution(sample[1], df_classifier.iloc[i][2], df_classifier.iloc[i][3])
-        posterior_probabilities[i] = priors[i] * p_feature1_given_label * p_feature2_given_label
-#        evidences[i] = p_feature1_given_label * p_feature2_given_label
+    adj = 0
+    for i in range(0, NUM_DIGITS):
+        if str(i) in selected_classes:
+            p_feature1_given_label = probability_distribution(sample.iloc[0], df_classifier.iloc[i+adj][0], df_classifier.iloc[i+adj][1])
+            p_feature2_given_label = probability_distribution(sample.iloc[1], df_classifier.iloc[i+adj][2], df_classifier.iloc[i+adj][3])
+            posterior_probabilities[i] = priors[i] * p_feature1_given_label * p_feature2_given_label
+#            evidences[i] = p_feature1_given_label * p_feature2_given_label
+        else:
+            adj -= 1
 
 #    evidence = 0
 #    for i in range(0, len(evidences)):
@@ -124,20 +142,26 @@ def probability_distribution(v, mean, var):
 
 
 # Calculates the accuracies of the predicitons
-def calc_accuracies(predictions, targets):
-    counts = np.zeros(10)
-    correct_predictions = np.zeros(10)
+def calc_accuracies(predictions, targets, n):
+    counts = np.zeros(NUM_DIGITS)
+    correct_predictions = np.zeros(NUM_DIGITS)
 
     for i in range(0, len(targets)):
-        counts[targets[i]] += 1
-        if(int(predictions[i]) == int(targets[i])):
-            correct_predictions[targets[i]] += 1
+        counts[targets.iloc[i]] += 1
+        if(int(predictions.iloc[i]) == int(targets.iloc[i])):
+            correct_predictions[targets.iloc[i]] += 1
 
-    accuracies = np.zeros(10)
-    for i in range(0, len(accuracies)):
-        accuracies[i] = correct_predictions[i] / counts[i]
+    accuracies = np.zeros(NUM_DIGITS)
+    for i in range(0, NUM_DIGITS):
+        if(counts[i] != 0):
+            accuracies[i] = correct_predictions[i] / counts[i]
 
     return accuracies
+
+def print_accuracies(accuracies, selected_classes):
+    for i in range(0, NUM_DIGITS):
+        if str(i) in selected_classes:
+            print(str(i) + ": " + str(accuracies[i]))
 
 
 
