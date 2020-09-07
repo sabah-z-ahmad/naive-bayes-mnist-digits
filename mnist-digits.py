@@ -37,8 +37,8 @@ def main():
     # Make predictions on test data
     print("Making predicitons...")
     predictions = np.zeros(len(x_test))
-    for i in range(0, len(x_test)):
-        predictions[i] = predict(test_features[i], priors, df_classifier)
+#    for i in range(0, len(x_test)):
+#        predictions[i] = predict(test_features[i], priors, df_classifier)
 #    print(df_classifier)
 
     # Calculate accuracy
