@@ -105,9 +105,6 @@ def get_priors(df, selected_classes):
         priors[index] = counts.iloc[[i]] / total
         i += 1
 
-#    for i in range(0, counts.shape[0]):
-#        priors[i] = counts.iloc[[i]] / total
-
     return priors
 
 
